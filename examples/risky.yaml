@@ -1,0 +1,39 @@
+version: 1
+
+objects:
+  internet:
+    - any
+  db:
+    - 10.10.2.10
+  legacy:
+    - 10.10.99.10
+
+services:
+  ssh:
+    protocol: tcp
+    port: 22
+  mysql:
+    protocol: tcp
+    port: 3306
+  https:
+    protocol: tcp
+    port: 443
+
+policies:
+  - name: any_to_any_https
+    source: [internet]
+    destination: [any]
+    service: [https]
+    action: allow
+
+  - name: internet_to_db
+    source: [internet]
+    destination: [db]
+    service: [mysql]
+    action: allow
+
+  - name: open_ssh
+    source: [any]
+    destination: [db]
+    service: [ssh]
+    action: allow

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "py2fw"
+version = "0.1.0"
+description = "Vendor-neutral firewall Policy-as-Code compiler"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Py2FW Maintainers" }]
+keywords = ["firewall", "policy-as-code", "cybersecurity", "compiler"]
+dependencies = [
+  "typer>=0.12",
+  "pydantic>=2.7",
+  "PyYAML>=6.0",
+  "rich>=13.7",
+  "graphviz>=0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+py2fw = "py2fw.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["py2fw"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["py2fw", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["py2fw"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=py2fw --cov-report=term-missing"
