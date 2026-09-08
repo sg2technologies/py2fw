@@ -21,6 +21,22 @@ Read-only IR queries (resolve address/group names to values, resolve services)
 live in `compiler/query.py` so exporters and analyzers share them without
 depending on each other.
 
+## Source provenance
+
+`parser/source_map.py` composes the YAML into a node tree and records a
+1-indexed line for every logical location (`policies[2].source`, `objects.web[0]`,
+`services.https.port`). The map is threaded into `validate_document` and
+`build_ir`, so `ValidationIssue`, every `Finding`, and `PolicyIR`/`AddressIR`/
+`ServiceIR` carry a `line`. `SourceMap.line()` walks up to the nearest known
+ancestor when an exact path is not present.
+
+## Hostname resolution
+
+`compiler/hosts.py` resolves hostnames used in objects. By default they are left
+literal (with a validation warning). With `--resolve-hosts`, names are resolved
+via DNS once, pinned in `<policy>.py2fw-lock.json`, and reused on later compiles
+unless `--refresh-hosts` is given. The resolver is injectable for testing.
+
 ## Plugin Contract
 
 ```python

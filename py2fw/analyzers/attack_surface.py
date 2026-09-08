@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 
-from py2fw.analyzers.models import Finding
+from py2fw.analyzers.models import Finding, rule_finding
 from py2fw.compiler.ir import FirewallIR, PolicyIR
 from py2fw.compiler.query import address_values, service_values
 from py2fw.utils.constants import BROAD_PREFIX_MAX_LEN, DATABASE_PORTS, HIGH_RISK_PORTS
@@ -38,7 +38,7 @@ def find_attack_surface(ir: FirewallIR) -> list[Finding]:
     findings: list[Finding] = []
     for rule in ir.policies:
         if not rule.enabled:
-            findings.append(Finding(severity="medium", title="Disabled rule", rule=rule.name))
+            findings.append(rule_finding(rule, "medium", "Disabled rule"))
             continue
         if rule.action != "allow":
             continue
@@ -48,29 +48,29 @@ def find_attack_surface(ir: FirewallIR) -> list[Finding]:
         broad_source = _is_broad_source(source_values)
 
         if broad_source and "any" in dest_values:
-            findings.append(Finding(severity="high", title="Any to Any", rule=rule.name))
+            findings.append(rule_finding(rule, "high", "Any to Any"))
 
         if broad_source:
             for port, title in HIGH_RISK_PORTS.items():
                 if _covers_port(ir, rule, port):
-                    findings.append(Finding(severity="high", title=title, rule=rule.name))
+                    findings.append(rule_finding(rule, "high", title))
             exposed_db = _covered_ports(ir, rule, DATABASE_PORTS)
             if exposed_db:
                 findings.append(
-                    Finding(
-                        severity="high",
-                        title="Internet to internal database",
-                        rule=rule.name,
-                        detail=f"Database ports: {sorted(exposed_db)}",
+                    rule_finding(
+                        rule,
+                        "high",
+                        "Internet to internal database",
+                        f"Database ports: {sorted(exposed_db)}",
                     )
                 )
             if any(svc.ports.is_all_ports for svc in service_values(ir, rule.services)):
                 findings.append(
-                    Finding(
-                        severity="high",
-                        title="Broad source to all ports",
-                        rule=rule.name,
-                        detail="Rule allows every port from an untrusted source.",
+                    rule_finding(
+                        rule,
+                        "high",
+                        "Broad source to all ports",
+                        "Rule allows every port from an untrusted source.",
                     )
                 )
     return findings

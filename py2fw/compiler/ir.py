@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from py2fw.parser.source_map import SourceMap
+
 MIN_PORT = 1
 MAX_PORT = 65535
 
@@ -87,6 +89,7 @@ class PortSpec:
 class AddressIR:
     name: str
     values: tuple[str, ...]
+    line: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,7 @@ class ServiceIR:
     protocol: str
     ports: PortSpec = field(default_factory=PortSpec)
     description: str = ""
+    line: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +111,8 @@ class PolicyIR:
     action: str
     enabled: bool
     description: str
+    line: int | None = None
+    location: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,3 +122,4 @@ class FirewallIR:
     services: dict[str, ServiceIR]
     policies: tuple[PolicyIR, ...]
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    source_map: SourceMap = field(default_factory=SourceMap)

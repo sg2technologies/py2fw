@@ -9,6 +9,12 @@ import typer
 from rich.console import Console
 
 from py2fw import __version__
+from py2fw.analyzers.compliance import (
+    FRAMEWORKS,
+    ComplianceReport,
+    compliance_report,
+    framework_title,
+)
 from py2fw.analyzers.engine import analyze_ir
 from py2fw.cli._pipeline import CompileError, compile_path, validate_path
 from py2fw.compiler.ir import FirewallIR
@@ -27,6 +33,12 @@ app = typer.Typer(help="Py2FW firewall Policy-as-Code compiler")
 console = Console()
 err_console = Console(stderr=True)
 
+
+def _emit(text: str) -> None:
+    """Print machine-generated output without Rich markup/highlighting."""
+
+    console.print(text, markup=False, highlight=False, soft_wrap=True)
+
 PolicyArg = Annotated[Path, typer.Argument(exists=True, dir_okay=False)]
 
 
@@ -39,9 +51,13 @@ def _handled() -> Iterator[None]:
         raise typer.Exit(code=2) from exc
 
 
-def _compile(policy: Path) -> FirewallIR:
+def _compile(
+    policy: Path, *, resolve_hosts: bool = False, refresh_hosts: bool = False
+) -> FirewallIR:
     with _handled():
-        return compile_path(policy)
+        return compile_path(
+            policy, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
+        )
 
 
 def _validate(policy: Path) -> tuple[PolicyDocument, ValidationResult]:
@@ -56,8 +72,9 @@ def validate_command(policy: PolicyArg) -> None:
         console.print("[green]Policy is valid[/green]")
     for issue in result.issues:
         color = "red" if issue.severity == "error" else "yellow"
+        where = f"{policy.name}:{issue.line}" if issue.line is not None else issue.location
         console.print(
-            f"[{color}]{issue.severity.upper()}[/{color}] {issue.location}: {issue.message}"
+            f"[{color}]{issue.severity.upper()}[/{color}] {where}: {issue.message}"
         )
     if not result.ok:
         raise typer.Exit(code=1)
@@ -69,8 +86,10 @@ def compile_command(
     target: Annotated[str, typer.Option("--target", "-t")],
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     allow_lossy: Annotated[bool, typer.Option("--allow-lossy")] = False,
+    resolve_hosts: Annotated[bool, typer.Option("--resolve-hosts")] = False,
+    refresh_hosts: Annotated[bool, typer.Option("--refresh-hosts")] = False,
 ) -> None:
-    ir = _compile(policy)
+    ir = _compile(policy, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts)
     registry = load_builtin_exporters()
     try:
         exporter = registry.create(target)
@@ -93,7 +112,7 @@ def compile_command(
         output.write_text(rendered, encoding="utf-8")
         console.print(f"[green]Wrote {output}[/green]")
     else:
-        console.print(rendered)
+        _emit(rendered)
 
 
 @app.command("analyze")
@@ -112,7 +131,54 @@ def analyze_command(
         output.write_text(rendered, encoding="utf-8")
         console.print(f"[green]Wrote {output}[/green]")
     else:
-        console.print(rendered)
+        _emit(rendered)
+
+
+@app.command("compliance")
+def compliance_command(
+    policy: PolicyArg,
+    framework: Annotated[
+        list[str] | None,
+        typer.Option("--framework", "-f", help=f"One or more of: {', '.join(FRAMEWORKS)}"),
+    ] = None,
+    output_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    frameworks = tuple(framework) if framework else FRAMEWORKS
+    unknown = [f for f in frameworks if f not in FRAMEWORKS]
+    if unknown:
+        console.print(f"[red]unknown framework(s): {', '.join(unknown)}[/red]")
+        raise typer.Exit(code=2)
+    report = compliance_report(_compile(policy), frameworks)
+    if output_json:
+        _emit(_compliance_json(report))
+    else:
+        _print_compliance(report, frameworks)
+    if report.by_status("fail"):
+        raise typer.Exit(code=1)
+
+
+def _compliance_json(report: ComplianceReport) -> str:
+    import json
+    from dataclasses import asdict
+
+    return json.dumps({"controls": [asdict(r) for r in report.results]}, indent=2)
+
+
+def _print_compliance(report: ComplianceReport, frameworks: tuple[str, ...]) -> None:
+    marks = {"pass": "[green]PASS[/green]", "review": "[yellow]REVIEW[/yellow]",
+             "fail": "[red]FAIL[/red]"}
+    for name in frameworks:
+        controls = report.for_framework(name)
+        if not controls:
+            continue
+        console.print(f"\n[bold]{framework_title(name)}[/bold]")
+        for control in controls:
+            console.print(f"  {marks[control.status]} {control.control}  {control.title}")
+            console.print(f"        {control.detail}")
+    passed = len(report.by_status("pass"))
+    review = len(report.by_status("review"))
+    failed = len(report.by_status("fail"))
+    console.print(f"\n{passed} pass, {review} review, {failed} fail")
 
 
 @app.command("simulate")

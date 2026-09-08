@@ -69,6 +69,34 @@ def test_diff_reports_changes(tmp_path: Path) -> None:
     assert "Security impact" in result.stdout
 
 
+def test_compliance_reports_and_exits_on_fail() -> None:
+    result = runner.invoke(app, ["compliance", "examples/risky.yaml"])
+    assert result.exit_code == 1
+    assert "PCI DSS" in result.stdout
+    assert "FAIL" in result.stdout
+
+
+def test_compliance_framework_filter() -> None:
+    result = runner.invoke(app, ["compliance", "examples/basic.yaml", "-f", "cis"])
+    assert "CIS Controls" in result.stdout
+    assert "PCI DSS" not in result.stdout
+
+
+def test_compliance_unknown_framework() -> None:
+    result = runner.invoke(app, ["compliance", "examples/basic.yaml", "-f", "hipaa"])
+    assert result.exit_code == 2
+
+
+def test_validate_shows_line_numbers(tmp_path: Path) -> None:
+    policy = tmp_path / "p.yaml"
+    policy.write_text(
+        "version: 1\nobjects:\n  web: [10.0.0.1]\n  bad:\n    - nope!!\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["validate", str(policy)])
+    assert result.exit_code == 1
+    assert "p.yaml:5" in result.stdout
+
+
 def test_validate_bad_policy_exit_code(tmp_path: Path) -> None:
     policy = tmp_path / "p.yaml"
     policy.write_text("version: 1\nobjects:\n  bad: [\"not valid\"]\n", encoding="utf-8")

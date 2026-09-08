@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 
 from py2fw.analyzers.duplicate_rules import fingerprint
-from py2fw.analyzers.models import Finding
+from py2fw.analyzers.models import Finding, rule_finding
 from py2fw.compiler.ir import FirewallIR, PolicyIR, PortRange, PortSpec
 from py2fw.compiler.query import address_values, service_values
 
@@ -83,23 +83,21 @@ def find_shadowed_rules(ir: FirewallIR) -> list[Finding]:
                 if fingerprint(earlier) == fingerprint(rule):
                     continue  # exact duplicate; reported by find_duplicate_rules
                 findings.append(
-                    Finding(
-                        severity="low",
-                        title="Redundant rule",
-                        rule=rule.name,
-                        detail=f"Fully covered by earlier rule {earlier.name} with the same action",
+                    rule_finding(
+                        rule,
+                        "low",
+                        "Redundant rule",
+                        f"Fully covered by earlier rule {earlier.name} with the same action",
                     )
                 )
             else:
                 findings.append(
-                    Finding(
-                        severity="medium",
-                        title="Shadowed rule",
-                        rule=rule.name,
-                        detail=(
-                            f"Never reached; earlier rule {earlier.name} "
-                            f"({earlier.action}) already decides this traffic"
-                        ),
+                    rule_finding(
+                        rule,
+                        "medium",
+                        "Shadowed rule",
+                        f"Never reached; earlier rule {earlier.name} "
+                        f"({earlier.action}) already decides this traffic",
                     )
                 )
             break

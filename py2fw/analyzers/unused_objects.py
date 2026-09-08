@@ -23,17 +23,35 @@ def find_unused_objects(ir: FirewallIR) -> list[Finding]:
         used.update(rule.source)
         used.update(rule.destination)
     _expand(used, ir.groups)
-    return [
-        Finding(severity="low", title="Unused object", rule=None, detail=name)
-        for name in sorted(set(ir.addresses) - used)
-    ]
+    findings: list[Finding] = []
+    for name in sorted(set(ir.addresses) - used):
+        address = ir.addresses.get(name)
+        findings.append(
+            Finding(
+                severity="low",
+                title="Unused object",
+                detail=name,
+                line=address.line if address else None,
+                location=f"objects.{name}",
+            )
+        )
+    return findings
 
 
 def find_unused_services(ir: FirewallIR) -> list[Finding]:
     used = {"any"}
     for rule in ir.policies:
         used.update(rule.services)
-    return [
-        Finding(severity="low", title="Unused service", rule=None, detail=name)
-        for name in sorted(set(ir.services) - used)
-    ]
+    findings: list[Finding] = []
+    for name in sorted(set(ir.services) - used):
+        service = ir.services.get(name)
+        findings.append(
+            Finding(
+                severity="low",
+                title="Unused service",
+                detail=name,
+                line=service.line if service else None,
+                location=f"services.{name}",
+            )
+        )
+    return findings

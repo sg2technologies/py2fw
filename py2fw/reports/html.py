@@ -14,9 +14,10 @@ def render_html(report: AnalysisReport) -> str:
         if not findings:
             continue
         rows = "\n".join(
-            "<li>{title}{rule}{detail}</li>".format(
+            "<li>{title}{rule}{loc}{detail}</li>".format(
                 title=escape(f.title),
                 rule=f" &mdash; {escape(f.rule)}" if f.rule else "",
+                loc=f" <code>line {f.line}</code>" if f.line is not None else "",
                 detail=f" <em>{escape(f.detail)}</em>" if f.detail else "",
             )
             for f in findings

@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from py2fw.parser.schema import PolicyDocument
+from py2fw.parser.source_map import SourceMap
 from py2fw.utils.constants import VALID_ACTIONS, VALID_PROTOCOLS
-from py2fw.utils.ip import is_valid_endpoint
+from py2fw.utils.ip import is_hostname, is_valid_endpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,18 +13,24 @@ class ValidationIssue:
     severity: str
     message: str
     location: str
+    line: int | None = None
 
 
 class ValidationResult:
-    def __init__(self, issues: list[ValidationIssue] | None = None) -> None:
+    def __init__(
+        self, issues: list[ValidationIssue] | None = None, source: SourceMap | None = None
+    ) -> None:
         self.issues = issues or []
+        self.source = source or SourceMap()
 
     @property
     def ok(self) -> bool:
         return not any(issue.severity == "error" for issue in self.issues)
 
     def add(self, severity: str, message: str, location: str) -> None:
-        self.issues.append(ValidationIssue(severity, message, location))
+        self.issues.append(
+            ValidationIssue(severity, message, location, self.source.line(location))
+        )
 
 
 def _validate_port(
@@ -56,19 +63,29 @@ def _validate_port(
             result.add("error", f"port out of range: {port}", f"services.{name}.port")
 
 
-def validate_document(document: PolicyDocument) -> ValidationResult:
-    result = ValidationResult()
+def validate_document(
+    document: PolicyDocument, source: SourceMap | None = None
+) -> ValidationResult:
+    result = ValidationResult(source=source)
 
     for name, values in document.objects.items():
         if not values:
             result.add("error", "object must contain at least one endpoint", f"objects.{name}")
         seen_values: set[str] = set()
-        for value in values:
+        for index, value in enumerate(values):
+            loc = f"objects.{name}[{index}]"
             if value in seen_values:
-                result.add("warning", f"duplicate object value: {value}", f"objects.{name}")
+                result.add("warning", f"duplicate object value: {value}", loc)
             seen_values.add(value)
             if not is_valid_endpoint(value):
-                result.add("error", f"invalid IP, CIDR, or hostname: {value}", f"objects.{name}")
+                result.add("error", f"invalid IP, CIDR, or hostname: {value}", loc)
+            elif is_hostname(value):
+                result.add(
+                    "warning",
+                    f"hostname '{value}' is passed through literally; pin to IP/CIDR or "
+                    f"compile with --resolve-hosts",
+                    loc,
+                )
 
     for name, members in document.groups.items():
         if not members:
