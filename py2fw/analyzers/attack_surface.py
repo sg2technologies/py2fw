@@ -1,13 +1,37 @@
 from __future__ import annotations
 
+import ipaddress
+
 from py2fw.analyzers.models import Finding
 from py2fw.compiler.ir import FirewallIR, PolicyIR
-from py2fw.exporters._helpers import address_values, service_values
-from py2fw.utils.constants import DATABASE_PORTS, HIGH_RISK_PORTS
+from py2fw.compiler.query import address_values, service_values
+from py2fw.utils.constants import BROAD_PREFIX_MAX_LEN, DATABASE_PORTS, HIGH_RISK_PORTS
 
 
-def _has_any_to_any(ir: FirewallIR, rule: PolicyIR) -> bool:
-    return "any" in address_values(ir, rule.source) and "any" in address_values(ir, rule.destination)
+def _is_broad_source(values: tuple[str, ...]) -> bool:
+    """True if the source covers 'any' or an over-large public prefix."""
+
+    for value in values:
+        if value == "any":
+            return True
+        try:
+            net = ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            continue
+        if not net.is_private and net.prefixlen <= BROAD_PREFIX_MAX_LEN[net.version]:
+            return True
+    return False
+
+
+def _covers_port(ir: FirewallIR, rule: PolicyIR, port: int) -> bool:
+    return any(svc.ports.contains(port) for svc in service_values(ir, rule.services))
+
+
+def _covered_ports(ir: FirewallIR, rule: PolicyIR, ports: frozenset[int]) -> set[int]:
+    matched: set[int] = set()
+    for svc in service_values(ir, rule.services):
+        matched |= svc.ports.matching(ports)
+    return matched
 
 
 def find_attack_surface(ir: FirewallIR) -> list[Finding]:
@@ -18,20 +42,35 @@ def find_attack_surface(ir: FirewallIR) -> list[Finding]:
             continue
         if rule.action != "allow":
             continue
-        services = service_values(ir, rule.services)
-        ports = {port for service in services for port in service.ports}
-        if _has_any_to_any(ir, rule):
+
+        source_values = address_values(ir, rule.source)
+        dest_values = address_values(ir, rule.destination)
+        broad_source = _is_broad_source(source_values)
+
+        if broad_source and "any" in dest_values:
             findings.append(Finding(severity="high", title="Any to Any", rule=rule.name))
-        for port, title in HIGH_RISK_PORTS.items():
-            if port in ports and "any" in address_values(ir, rule.source):
-                findings.append(Finding(severity="high", title=title, rule=rule.name))
-        if ports & DATABASE_PORTS and "any" in address_values(ir, rule.source):
-            findings.append(
-                Finding(
-                    severity="high",
-                    title="Internet to internal database",
-                    rule=rule.name,
-                    detail=f"Database ports: {sorted(ports & DATABASE_PORTS)}",
+
+        if broad_source:
+            for port, title in HIGH_RISK_PORTS.items():
+                if _covers_port(ir, rule, port):
+                    findings.append(Finding(severity="high", title=title, rule=rule.name))
+            exposed_db = _covered_ports(ir, rule, DATABASE_PORTS)
+            if exposed_db:
+                findings.append(
+                    Finding(
+                        severity="high",
+                        title="Internet to internal database",
+                        rule=rule.name,
+                        detail=f"Database ports: {sorted(exposed_db)}",
+                    )
                 )
-            )
+            if any(svc.ports.is_all_ports for svc in service_values(ir, rule.services)):
+                findings.append(
+                    Finding(
+                        severity="high",
+                        title="Broad source to all ports",
+                        rule=rule.name,
+                        detail="Rule allows every port from an untrusted source.",
+                    )
+                )
     return findings

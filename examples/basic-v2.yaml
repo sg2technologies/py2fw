@@ -1,0 +1,54 @@
+version: 1
+
+objects:
+  web:
+    - 10.10.1.10
+  db:
+    - 10.10.2.10
+  internet:
+    - any
+
+groups:
+  web_tier:
+    - web
+  database_tier:
+    - db
+
+services:
+  https:
+    protocol: tcp
+    port: 443
+  mysql:
+    protocol: tcp
+    port: 3306
+
+policies:
+  - name: web_to_db
+    source:
+      - web_tier
+    destination:
+      - database_tier
+    service:
+      - mysql
+    action: allow
+    description: Web tier reaches database over MySQL.
+
+  - name: internet_to_web
+    source:
+      - internet
+    destination:
+      - web
+    service:
+      - https
+    action: allow
+    description: Public HTTPS to web tier.
+
+  - name: admin_from_anywhere
+    source:
+      - internet
+    destination:
+      - db
+    service:
+      - mysql
+    action: allow
+    description: TEMPORARY - remove after migration.

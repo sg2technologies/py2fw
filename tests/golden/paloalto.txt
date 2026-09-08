@@ -1,0 +1,15 @@
+set address database_tier ip-netmask 10.10.2.10/32
+set address web ip-netmask 10.10.1.10/32
+set address web_tier ip-netmask 10.10.1.10/32
+set service https protocol tcp port 443
+set service mysql protocol tcp port 3306
+set rulebase security rules web_to_db from any to any
+set rulebase security rules web_to_db source [ web_tier ]
+set rulebase security rules web_to_db destination [ database_tier ]
+set rulebase security rules web_to_db service [ mysql ]
+set rulebase security rules web_to_db application any action allow
+set rulebase security rules internet_to_web from any to any
+set rulebase security rules internet_to_web source [ any ]
+set rulebase security rules internet_to_web destination [ web ]
+set rulebase security rules internet_to_web service [ https ]
+set rulebase security rules internet_to_web application any action allow

@@ -1,0 +1,64 @@
+{
+  "objects": [
+    {
+      "name": "web",
+      "type": "network-list",
+      "members": [
+        "10.10.1.10/32"
+      ]
+    },
+    {
+      "name": "db",
+      "type": "network-list",
+      "members": [
+        "10.10.2.10/32"
+      ]
+    },
+    {
+      "name": "web_tier",
+      "type": "network-list",
+      "members": [
+        "10.10.1.10/32"
+      ]
+    },
+    {
+      "name": "database_tier",
+      "type": "network-list",
+      "members": [
+        "10.10.2.10/32"
+      ]
+    }
+  ],
+  "access_rules": [
+    {
+      "name": "web_to_db",
+      "source": [
+        "web_tier"
+      ],
+      "destination": [
+        "database_tier"
+      ],
+      "service": [
+        "mysql"
+      ],
+      "action": "Accept",
+      "enabled": true,
+      "comments": "Web tier reaches database over MySQL."
+    },
+    {
+      "name": "internet_to_web",
+      "source": [
+        "Any"
+      ],
+      "destination": [
+        "web"
+      ],
+      "service": [
+        "https"
+      ],
+      "action": "Accept",
+      "enabled": true,
+      "comments": "Public HTTPS to web tier."
+    }
+  ]
+}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from py2fw.analyzers.models import Finding
 
-WEIGHTS: dict[str, int] = {"high": 25, "medium": 10, "low": 3}
+WEIGHTS: dict[str, int] = {"critical": 40, "high": 25, "medium": 10, "low": 3}
 
 
 def calculate_risk_score(findings: list[Finding]) -> int:

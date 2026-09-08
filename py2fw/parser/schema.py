@@ -24,9 +24,9 @@ class ServiceModel(BaseModel):
 
     @model_validator(mode="after")
     def port_matches_protocol(self) -> ServiceModel:
-        if self.protocol == "icmp":
-            return self
-        if self.protocol == "any":
+        if self.protocol in ("icmp", "any"):
+            if self.port is not None:
+                raise ValueError(f"{self.protocol} services must not specify a port")
             return self
         if self.port is None:
             raise ValueError("tcp and udp services require a port")

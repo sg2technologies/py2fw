@@ -26,7 +26,9 @@ class ValidationResult:
         self.issues.append(ValidationIssue(severity, message, location))
 
 
-def _validate_port(value: int | str | list[int] | None, result: ValidationResult, name: str) -> None:
+def _validate_port(
+    value: int | str | list[int] | None, result: ValidationResult, name: str
+) -> None:
     ports: list[int]
     if value is None:
         return

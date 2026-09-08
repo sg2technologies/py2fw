@@ -5,7 +5,7 @@ from py2fw.analyzers.models import AnalysisReport
 
 def render_markdown(report: AnalysisReport) -> str:
     lines = [f"Risk Score: {report.risk_score}", ""]
-    for severity in ("high", "medium", "low"):
+    for severity in ("critical", "high", "medium", "low"):
         findings = report.by_severity(severity)
         if not findings:
             continue

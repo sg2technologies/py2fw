@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from py2fw.compiler.builder import build_ir
+from py2fw.compiler.ir import PortRange
 from py2fw.exporters.iptables.exporter import IptablesExporter
 from py2fw.parser.schema import PolicyDocument
 from py2fw.plugins.registry import load_builtin_exporters
@@ -30,7 +31,8 @@ def test_build_ir_resolves_groups() -> None:
     ir = build_ir(_document())
 
     assert ir.addresses["tier"].values == ("10.0.0.1/32",)
-    assert ir.services["mysql"].ports == (3306,)
+    assert ir.services["mysql"].ports.contains(3306)
+    assert ir.services["mysql"].ports.ranges == (PortRange(3306, 3306),)
 
 
 def test_iptables_exporter_uses_ir() -> None:
