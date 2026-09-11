@@ -1,0 +1,34 @@
+{
+  "securityRules": [
+    {
+      "name": "web_to_db-100",
+      "properties": {
+        "priority": 100,
+        "direction": "Inbound",
+        "access": "Allow",
+        "protocol": "Tcp",
+        "sourcePortRange": "*",
+        "destinationPortRanges": [
+          "3306"
+        ],
+        "sourceAddressPrefix": "10.10.1.10/32",
+        "destinationAddressPrefix": "10.10.2.10/32"
+      }
+    },
+    {
+      "name": "internet_to_web-101",
+      "properties": {
+        "priority": 101,
+        "direction": "Inbound",
+        "access": "Allow",
+        "protocol": "Tcp",
+        "sourcePortRange": "*",
+        "destinationPortRanges": [
+          "443"
+        ],
+        "sourceAddressPrefix": "*",
+        "destinationAddressPrefix": "10.10.1.10/32"
+      }
+    }
+  ]
+}

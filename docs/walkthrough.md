@@ -1,0 +1,103 @@
+# Walkthrough
+
+## 1. Edit the policy
+
+This is your source of truth, version-controlled.
+
+```bash
+vim policy.yaml
+```
+
+## 2. Is it well-formed?
+
+```bash
+py2fw validate policy.yaml            # schema + broken references, with line numbers
+```
+
+## 3. Is it safe?
+
+```bash
+py2fw analyze policy.yaml             # any-to-any, DB exposed to internet, shadowed/unused rules
+py2fw compliance policy.yaml          # PCI DSS / NIST 800-53 / CIS control status
+```
+
+## 4. Does it do what I think? (troubleshooting / verification)
+
+```bash
+py2fw simulate policy.yaml --src 10.1.0.5 --dst 10.2.0.9 --port 5432
+py2fw explain  policy.yaml --src 10.1.0.5 --dst 10.2.0.9 --port 5432   # rule-by-rule trace
+```
+
+## 5. What am I about to change?
+
+```bash
+py2fw diff policy.yaml.orig policy.yaml     # + / - / ~ rules, security-impact score
+```
+
+## 6. Produce the device config
+
+```bash
+py2fw compile policy.yaml --target fortigate -o firewall.conf
+```
+
+Then you push `firewall.conf` to the box the way you already do (paste into CLI,
+Ansible, vendor API, change ticket). Py2FW stops at producing the artifact.
+
+## As a security admin — "add a rule" request comes in
+
+> "App tier needs to reach the new Redis cluster on 6379."
+
+```yaml
+# edit policy.yaml
+services:
+  redis: { protocol: tcp, port: 6379 }
+policies:
+  - name: app_to_redis
+    source: [app_tier]
+    destination: [redis_cluster]
+    service: [redis]
+    action: allow
+    description: "JIRA-1234 - session cache"
+```
+
+```bash
+py2fw validate policy.yaml                    # clean
+py2fw diff policy.yaml.prev policy.yaml       # + app_to_redis added (allow) — impact LOW
+py2fw analyze policy.yaml                     # no new HIGH findings
+py2fw compile policy.yaml -t fortigate -o fw.conf   # hand off / apply
+```
+
+You never hand-wrote FortiGate syntax, and the risk of the change was quantified
+before it shipped.
+
+## As a developer in a policy repo (GitOps)
+
+The YAML lives in a Git repo. You open a PR editing it. CI runs
+`validate` / `analyze` / `compliance` and a bot comments the diff:
+
+```
+~ web_ingress  source scope broadened: {10.0.0.0/24} -> {0.0.0.0/0}
+Security impact: MEDIUM
+```
+
+Reviewer sees you just opened a rule to the whole internet, asks you to scope it.
+CI goes green, merge, and the merge pipeline runs `py2fw compile` and deploys.
+
+## As anyone running multiple enforcement points
+
+One `policy.yaml`, compiled to every place that filters traffic — guaranteed
+consistent:
+
+```bash
+py2fw compile policy.yaml -t fortigate   -o edge.conf
+py2fw compile policy.yaml -t aws-sg      -o sg.json
+py2fw compile policy.yaml -t kubernetes  -o netpol.yaml
+```
+
+## What it does not do (today)
+
+- No connection to devices — you apply the output.
+- No import of existing firewall configs (no reverse direction yet).
+- No drift detection / state management (roadmap).
+- `compile` refuses to emit if the target can't express your policy faithfully
+  (e.g. a deny rule to AWS security groups) unless you pass `--allow-lossy`.

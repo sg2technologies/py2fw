@@ -1,0 +1,26 @@
+{
+  "SecurityGroupIngress": [
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 3306,
+      "ToPort": 3306,
+      "IpRanges": [
+        {
+          "CidrIp": "10.10.1.10/32",
+          "Description": "web_to_db"
+        }
+      ]
+    },
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 443,
+      "ToPort": 443,
+      "IpRanges": [
+        {
+          "CidrIp": "0.0.0.0/0",
+          "Description": "internet_to_web"
+        }
+      ]
+    }
+  ]
+}

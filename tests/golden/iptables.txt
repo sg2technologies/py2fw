@@ -1,0 +1,9 @@
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+# web_to_db (rule-a9926efdc71d)
+-A FORWARD -p tcp -s 10.10.1.10/32 -d 10.10.2.10/32 --dport 3306 -j ACCEPT
+# internet_to_web (rule-631e3e6d9f1f)
+-A FORWARD -p tcp -d 10.10.1.10/32 --dport 443 -j ACCEPT
+COMMIT

@@ -1,0 +1,2 @@
+access-list PY2FW extended permit tcp 10.10.1.10/32 10.10.2.10/32 eq 3306
+access-list PY2FW extended permit tcp any 10.10.1.10/32 eq 443

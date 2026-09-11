@@ -1,0 +1,7 @@
+table inet py2fw {
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ip saddr 10.10.1.10/32 ip daddr 10.10.2.10/32 tcp dport 3306 counter accept comment "web_to_db"
+    ip daddr 10.10.1.10/32 tcp dport 443 counter accept comment "internet_to_web"
+  }
+}

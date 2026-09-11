@@ -7,7 +7,7 @@ name = "py2fw"
 version = "0.1.0"
 description = "Vendor-neutral firewall Policy-as-Code compiler"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Py2FW Maintainers" }]
 keywords = ["firewall", "policy-as-code", "cybersecurity", "compiler"]
@@ -25,6 +25,7 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.5",
   "mypy>=1.10",
+  "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -34,17 +35,24 @@ py2fw = "py2fw.main:app"
 packages = ["py2fw"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 src = ["py2fw", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ANN"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 packages = ["py2fw"]
+
+[[tool.mypy.overrides]]
+module = ["graphviz", "graphviz.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

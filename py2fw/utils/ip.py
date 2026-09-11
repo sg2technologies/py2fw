@@ -20,12 +20,23 @@ def is_valid_ip_or_cidr(value: str) -> bool:
         return False
 
 
+def is_ipv6(value: str) -> bool:
+    try:
+        return ipaddress.ip_network(value, strict=False).version == 6
+    except ValueError:
+        return False
+
+
 def is_valid_hostname(value: str) -> bool:
     return bool(HOSTNAME_RE.match(value)) and not is_valid_ip_or_cidr(value)
 
 
 def is_valid_endpoint(value: str) -> bool:
     return is_valid_ip_or_cidr(value) or is_valid_hostname(value)
+
+
+def is_hostname(value: str) -> bool:
+    return is_valid_hostname(value)
 
 
 def normalize_network(value: str) -> str:

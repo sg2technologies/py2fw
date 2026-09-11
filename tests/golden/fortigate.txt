@@ -1,0 +1,43 @@
+config firewall address
+    edit "database_tier"
+        set subnet 10.10.2.10 255.255.255.255
+    next
+    edit "web"
+        set subnet 10.10.1.10 255.255.255.255
+    next
+    edit "web_tier"
+        set subnet 10.10.1.10 255.255.255.255
+    next
+end
+config firewall service custom
+    edit "https"
+        set tcp-portrange 443
+    next
+    edit "mysql"
+        set tcp-portrange 3306
+    next
+end
+config firewall policy
+    edit 1
+        set name "web_to_db"
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "web_tier"
+        set dstaddr "database_tier"
+        set service "mysql"
+        set action accept
+        set schedule "always"
+        set logtraffic all
+    next
+    edit 2
+        set name "internet_to_web"
+        set srcintf "any"
+        set dstintf "any"
+        set srcaddr "all"
+        set dstaddr "web"
+        set service "https"
+        set action accept
+        set schedule "always"
+        set logtraffic all
+    next
+end
