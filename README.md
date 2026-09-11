@@ -78,3 +78,19 @@ mypy py2fw
 - **Next:** GitOps action + PR comments, signed policy artifacts, egress/zone
   modeling to convert `review` compliance controls into `pass`/`fail`.
 - **Later:** REST API, RBAC, drift detection, AI-assisted rule recommendation.
+
+## Contact
+
+info@sg2technologies.com
+
+## License
+
+Copyright © 2026 SG2 Technologies.
+
+Licensed under the Apache License, Version 2.0. You may use, modify, and
+redistribute this code — including commercially — under the terms of that
+license.
+
+## Author
+
+Gopi Narayanaswamy — [github.com/ngopi37](https://github.com/ngopi37)
