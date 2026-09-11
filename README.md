@@ -77,11 +77,16 @@ mypy py2fw
   reproducible hostname resolution with a lockfile.
 - **Next:** GitOps action + PR comments, signed policy artifacts, egress/zone
   modeling to convert `review` compliance controls into `pass`/`fail`.
-- **Later:** REST API, RBAC, drift detection, AI-assisted rule recommendation.
+
+## Enterprise
+
+REST API, RBAC, drift detection, and AI-assisted rule recommendation are
+available as part of Py2FW Enterprise. Contact SG2 Technologies to learn more:
+[sg2technologies.com](https://sg2technologies.com) · info@sg2technologies.com
 
 ## Contact
 
-info@sg2technologies.com
+[sg2technologies.com](https://sg2technologies.com) · info@sg2technologies.com
 
 ## License
 
