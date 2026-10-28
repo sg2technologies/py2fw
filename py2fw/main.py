@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from py2fw import __version__
 from py2fw.analyzers.compliance import (
@@ -16,7 +19,15 @@ from py2fw.analyzers.compliance import (
     framework_title,
 )
 from py2fw.analyzers.engine import analyze_ir
-from py2fw.cli._pipeline import CompileError, compile_path, validate_path
+from py2fw.analyzers.gate import (
+    DEFAULT_FAIL_ON,
+    SEVERITY_RANK,
+    VIOLATION,
+    WAIVED,
+    WARNING,
+    GateReport,
+)
+from py2fw.cli._pipeline import CompileError, check_path, compile_path, validate_path
 from py2fw.compiler.ir import FirewallIR
 from py2fw.compiler.validator import ValidationResult
 from py2fw.engine.diff import RuleSignature, diff_policies
@@ -40,6 +51,13 @@ def _emit(text: str) -> None:
     console.print(text, markup=False, highlight=False, soft_wrap=True)
 
 PolicyArg = Annotated[Path, typer.Argument(exists=True, dir_okay=False)]
+FailOnOpt = Annotated[
+    str,
+    typer.Option(
+        "--fail-on",
+        help=f"Lowest severity that blocks: {', '.join(SEVERITY_RANK)}",
+    ),
+]
 
 
 @contextmanager
@@ -80,6 +98,76 @@ def validate_command(policy: PolicyArg) -> None:
         raise typer.Exit(code=1)
 
 
+def _check(
+    policy: Path, fail_on: str, *, resolve_hosts: bool = False, refresh_hosts: bool = False
+) -> tuple[FirewallIR, GateReport]:
+    if fail_on not in SEVERITY_RANK:
+        err_console.print(f"[red]unknown severity: {fail_on}[/red]")
+        raise typer.Exit(code=2)
+    with _handled():
+        return check_path(
+            policy, fail_on=fail_on, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
+        )
+
+
+_VERDICT_COLORS = {VIOLATION: "red", WAIVED: "cyan", WARNING: "yellow"}
+
+
+def _print_gate(policy: Path, gate: GateReport, out: Console) -> None:
+    for verdict in (VIOLATION, WAIVED, WARNING):
+        color = _VERDICT_COLORS[verdict]
+        for item in gate.by_verdict(verdict):
+            finding = item.finding
+            where = f"{policy.name}:{finding.line}" if finding.line else finding.location
+            subject = f" ({finding.rule})" if finding.rule else ""
+            detail = f" - {finding.detail}" if finding.detail else ""
+            note = f" [{item.note}]" if item.note and item.note != "validation" else ""
+            message = escape(f"{where}: {finding.severity} {finding.title}{subject}{detail}{note}")
+            out.print(
+                f"[{color}]{verdict.upper()}[/{color}] {message}", highlight=False, soft_wrap=True
+            )
+    counts = ", ".join(
+        f"{len(gate.by_verdict(verdict))} {verdict}" for verdict in (VIOLATION, WAIVED, WARNING)
+    )
+    status = "[green]PASS[/green]" if gate.passed else "[red]FAIL[/red]"
+    out.print(f"{status} {policy.name}: {counts} (fail-on: {gate.fail_on})")
+
+
+def _gate_json(policy: Path, gate: GateReport) -> str:
+    return json.dumps(
+        {
+            "policy": str(policy),
+            "passed": gate.passed,
+            "fail_on": gate.fail_on,
+            "items": [
+                {"verdict": item.verdict, "note": item.note, **asdict(item.finding)}
+                for item in gate.items
+            ],
+        },
+        indent=2,
+    )
+
+
+@app.command("check")
+def check_command(
+    policies: Annotated[list[Path], typer.Argument(exists=True, dir_okay=False)],
+    fail_on: FailOnOpt = DEFAULT_FAIL_ON,
+    output_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Deployment gate: exit 1 if any policy has a blocking violation (for CI / pre-merge)."""
+
+    failed = False
+    for policy in policies:
+        _, gate = _check(policy, fail_on)
+        failed = failed or not gate.passed
+        if output_json:
+            _emit(_gate_json(policy, gate))
+        else:
+            _print_gate(policy, gate, console)
+    if failed:
+        raise typer.Exit(code=1)
+
+
 @app.command("compile")
 def compile_command(
     policy: PolicyArg,
@@ -88,8 +176,18 @@ def compile_command(
     allow_lossy: Annotated[bool, typer.Option("--allow-lossy")] = False,
     resolve_hosts: Annotated[bool, typer.Option("--resolve-hosts")] = False,
     refresh_hosts: Annotated[bool, typer.Option("--refresh-hosts")] = False,
+    fail_on: FailOnOpt = DEFAULT_FAIL_ON,
 ) -> None:
-    ir = _compile(policy, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts)
+    ir, gate = _check(
+        policy, fail_on, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
+    )
+    if not gate.passed:
+        _print_gate(policy, gate, err_console)
+        err_console.print(
+            "[red]refusing to emit a policy with blocking violations; fix the rules or add "
+            "a time-boxed entry under 'exceptions:'[/red]"
+        )
+        raise typer.Exit(code=4)
     registry = load_builtin_exporters()
     try:
         exporter = registry.create(target)

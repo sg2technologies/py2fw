@@ -6,7 +6,13 @@ YAML -> Parser -> Validator -> IR Builder -> Optimizer -> Exporter Plugin
                                    +-> Evaluation Engine (engine/evaluate.py)
                                    +-> Diff Engine        (engine/diff.py)
                                    +-> Analyzers          (analyzers/)
+                                           +-> Gate      (analyzers/gate.py) -> check / compile
 ```
+
+`analyzers/gate.py` takes the analyzer findings, validation warnings and the
+policy's `exceptions`, and labels each finding `violation`, `waived` or
+`warning` according to the `--fail-on` threshold. `compile` exports only when
+there are no violations. See [guardrails.md](guardrails.md).
 
 The parser and validator are vendor-neutral. They understand only the Py2FW
 policy schema, object references, services and rule semantics.
