@@ -62,6 +62,34 @@ def _covers_services(ir: FirewallIR, outer: PolicyIR, inner: PolicyIR) -> bool:
     )
 
 
+def _overlaps_addresses(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    return any(
+        a.version == b.version and a.overlaps(b)
+        for a in _networks(left)
+        for b in _networks(right)
+    )
+
+
+def _overlaps_services(ir: FirewallIR, left: PolicyIR, right: PolicyIR) -> bool:
+    left_protos, left_ports = _port_spec_for(ir, left.services)
+    right_protos, right_ports = _port_spec_for(ir, right.services)
+    if "any" in left_protos or "any" in right_protos:
+        return True
+    if not left_protos & right_protos:
+        return False
+    return left_ports.overlaps(right_ports)
+
+
+def _overlaps(ir: FirewallIR, left: PolicyIR, right: PolicyIR) -> bool:
+    return (
+        _overlaps_addresses(address_values(ir, left.source), address_values(ir, right.source))
+        and _overlaps_addresses(
+            address_values(ir, left.destination), address_values(ir, right.destination)
+        )
+        and _overlaps_services(ir, left, right)
+    )
+
+
 def _subsumes(ir: FirewallIR, outer: PolicyIR, inner: PolicyIR) -> bool:
     return (
         _covers_addresses(address_values(ir, outer.source), address_values(ir, inner.source))
@@ -76,8 +104,15 @@ def find_shadowed_rules(ir: FirewallIR) -> list[Finding]:
     findings: list[Finding] = []
     enabled = [rule for rule in ir.policies if rule.enabled]
     for i, rule in enumerate(enabled):
+        conflict: PolicyIR | None = None
         for earlier in enabled[:i]:
             if not _subsumes(ir, earlier, rule):
+                if (
+                    conflict is None
+                    and earlier.action != rule.action
+                    and _overlaps(ir, earlier, rule)
+                ):
+                    conflict = earlier
                 continue
             if earlier.action == rule.action:
                 if fingerprint(earlier) == fingerprint(rule):
@@ -101,4 +136,15 @@ def find_shadowed_rules(ir: FirewallIR) -> list[Finding]:
                     )
                 )
             break
+        else:
+            if conflict is not None:
+                findings.append(
+                    rule_finding(
+                        rule,
+                        "medium",
+                        "Conflicting rules",
+                        f"Partially overlaps earlier rule {conflict.name} "
+                        f"({conflict.action}); rule order decides the overlap",
+                    )
+                )
     return findings

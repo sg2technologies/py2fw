@@ -14,7 +14,7 @@ from py2fw.utils.constants import (
 )
 
 
-def _is_broad_source(values: tuple[str, ...]) -> bool:
+def is_broad_source(values: tuple[str, ...]) -> bool:
     """True if the source covers 'any' or an over-large public prefix."""
 
     for value in values:
@@ -101,7 +101,7 @@ def find_attack_surface(ir: FirewallIR) -> list[Finding]:
 
         source_values = address_values(ir, rule.source)
         dest_values = address_values(ir, rule.destination)
-        broad_source = _is_broad_source(source_values)
+        broad_source = is_broad_source(source_values)
 
         if broad_source and "any" in dest_values:
             findings.append(rule_finding(rule, "critical", "Any to Any"))

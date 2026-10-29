@@ -29,6 +29,9 @@ class Capabilities:
     supports_reject: bool = False
     supports_ipv6: bool = True
     supports_ranges: bool = True
+    # False when the target's rules carry no destination (it is implied by where
+    # the rules are attached, e.g. a security group or a pod selector).
+    scopes_destination: bool = True
 
 
 def rule_comment(rule: PolicyIR) -> str:

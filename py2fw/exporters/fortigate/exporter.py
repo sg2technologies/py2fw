@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from collections.abc import Callable
 
 from py2fw.compiler.ir import FirewallIR, PortRange
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import Capabilities
 from py2fw.plugins.base import Exporter
 
@@ -12,6 +14,21 @@ class FortiGateExporter(Exporter):
     name = "fortigate"
     description = "FortiGate CLI configuration"
     capabilities = Capabilities(supports_reject=False)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        return (
+            _syntax.balanced_blocks(
+                rendered, re.compile(r"\s*config "), re.compile(r"\s*end$"), "config/end"
+            )
+            + _syntax.balanced_blocks(
+                rendered, re.compile(r"\s*edit "), re.compile(r"\s*next$"), "edit/next"
+            )
+            + _syntax.line_grammar(
+                rendered,
+                [r"config firewall [\w ]+", r"\s+edit .+", r"\s+set \S+.*", r"\s+next",
+                 r"end", r"\s*#.*"],
+            )
+        )
 
     def export(self, ir: FirewallIR) -> str:
         referenced = _referenced_addresses(ir)

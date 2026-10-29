@@ -5,7 +5,7 @@ from py2fw.compiler.ir import FirewallIR
 
 
 def find_documentation_gaps(ir: FirewallIR) -> list[Finding]:
-    """Enabled rules with no description hurt auditability and change control."""
+    """Enabled rules with no description have no recorded business justification."""
 
     findings: list[Finding] = []
     for rule in ir.policies:
@@ -14,8 +14,8 @@ def find_documentation_gaps(ir: FirewallIR) -> list[Finding]:
                 rule_finding(
                     rule,
                     "low",
-                    "Missing rule description",
-                    "Descriptions improve auditability and change control.",
+                    "Missing business justification",
+                    "Add a description stating why this access is needed.",
                 )
             )
     return findings

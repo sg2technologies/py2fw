@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from py2fw.compiler.ir import FirewallIR, PortRange
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import Capabilities
 from py2fw.plugins.base import Exporter
 
@@ -11,6 +12,11 @@ class PaloAltoExporter(Exporter):
     name = "paloalto"
     description = "Palo Alto PAN-OS set commands"
     capabilities = Capabilities(supports_reject=True)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        return _syntax.line_grammar(
+            rendered, [r"set (address|address-group|service|service-group|rulebase) .+", r"#.*"]
+        )
 
     def export(self, ir: FirewallIR) -> str:
         referenced = _referenced(ir)

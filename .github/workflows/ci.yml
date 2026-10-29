@@ -23,3 +23,5 @@ jobs:
       - run: mypy py2fw
       - run: pytest
       - run: py2fw check examples/basic.yaml
+      - run: py2fw check examples/prod.yaml --baseline examples/baseline.yaml
+      - run: py2fw verify examples/prod.yaml --target nftables

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from py2fw.compiler.ir import FirewallIR, ServiceIR
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import (
     Capabilities,
     address_values,
@@ -18,6 +19,33 @@ class IptablesExporter(Exporter):
     name = "iptables"
     description = "Linux iptables / ip6tables rules"
     capabilities = Capabilities(supports_reject=True)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        problems: list[str] = []
+        for section in rendered.split("\n\n"):
+            lines = [line for line in section.splitlines() if line.strip()]
+            if lines and lines[0] == "# ip6tables-restore":
+                lines = lines[1:]
+            if not lines or lines[0] != "*filter" or lines[-1] != "COMMIT":
+                problems.append("each table must start with '*filter' and end with 'COMMIT'")
+        return problems + _syntax.line_grammar(
+            rendered,
+            [
+                r"\*filter",
+                r"COMMIT",
+                r"#.*",
+                r":(INPUT|FORWARD|OUTPUT) (ACCEPT|DROP) \[0:0\]",
+                r"-A FORWARD( -p (tcp|udp|icmp))?( -s \S+)?( -d \S+)?( --dport \d+(:\d+)?)?"
+                r" -j (ACCEPT|DROP|REJECT)",
+            ],
+        )
+
+    def native_checks(self, rendered: str) -> list[tuple[tuple[str, ...], str]]:
+        v4, _, v6 = rendered.partition("\n\n# ip6tables-restore\n")
+        checks: list[tuple[tuple[str, ...], str]] = [(("iptables-restore", "--test"), v4 + "\n")]
+        if v6:
+            checks.append((("ip6tables-restore", "--test"), v6 + "\n"))
+        return checks
 
     def export(self, ir: FirewallIR) -> str:
         v4 = ["*filter", ":INPUT ACCEPT [0:0]", ":FORWARD DROP [0:0]", ":OUTPUT ACCEPT [0:0]"]

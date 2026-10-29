@@ -29,6 +29,18 @@
       ]
     }
   ],
+  "services": [
+    {
+      "name": "https",
+      "type": "service-tcp",
+      "port": "443"
+    },
+    {
+      "name": "mysql",
+      "type": "service-tcp",
+      "port": "3306"
+    }
+  ],
   "access_rules": [
     {
       "name": "web_to_db",

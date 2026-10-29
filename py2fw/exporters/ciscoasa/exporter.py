@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from py2fw.compiler.ir import FirewallIR, PortRange, ServiceIR
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import Capabilities, address_values, service_values
 from py2fw.plugins.base import Exporter
 
@@ -9,6 +10,16 @@ class CiscoAsaExporter(Exporter):
     name = "ciscoasa"
     description = "Cisco ASA access-list entries"
     capabilities = Capabilities(supports_ipv6=True)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        return _syntax.line_grammar(
+            rendered,
+            [
+                r"access-list \S+ extended (permit|deny) (ip|tcp|udp|icmp) \S+( \S+)? \S+( \S+)?"
+                r"( (eq \d+|range \d+ \d+))?",
+                r"!.*",
+            ],
+        )
 
     def export(self, ir: FirewallIR) -> str:
         lines: list[str] = []

@@ -1,0 +1,48 @@
+version: 1
+environment: prod
+
+objects:
+  internet: [any]
+  web: [10.20.1.0/24]
+  db: [10.20.2.10]
+  monitoring: [10.20.9.5]
+
+services:
+  https: { protocol: tcp, port: 443 }
+  postgres: { protocol: tcp, port: 5432 }
+  node_exporter: { protocol: tcp, port: 9100 }
+
+policies:
+  - name: internet_to_web
+    source: [internet]
+    destination: [web]
+    service: [https]
+    action: allow
+    description: Public HTTPS storefront.
+    owner: web-platform
+    ticket: CHG-1001
+
+  - name: web_to_db
+    source: [web]
+    destination: [db]
+    service: [postgres]
+    action: allow
+    description: Storefront reads and writes orders.
+    owner: data-platform
+    ticket: CHG-1002
+
+  - name: monitoring_scrape
+    source: [monitoring]
+    destination: [web, db]
+    service: [node_exporter]
+    action: allow
+    description: Prometheus scrapes host metrics.
+    owner: sre
+    ticket: CHG-1003
+
+# Flows whose decision must never change. Run by `check`, `test`, `compile` and `deploy`.
+tests:
+  - { name: public-https-works, src: internet, dst: web, port: 443, expect: allow }
+  - { name: db-not-public, src: internet, dst: db, port: 5432, expect: deny }
+  - { name: web-reaches-db, src: web, dst: db, port: 5432, expect: allow }
+  - { name: db-cannot-ssh-to-web, src: db, dst: web, port: 22, expect: deny }
