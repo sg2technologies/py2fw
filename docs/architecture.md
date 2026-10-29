@@ -6,13 +6,23 @@ YAML -> Parser -> Validator -> IR Builder -> Optimizer -> Exporter Plugin
                                    +-> Evaluation Engine (engine/evaluate.py)
                                    +-> Diff Engine        (engine/diff.py)
                                    +-> Analyzers          (analyzers/)
+                                   +-> Baseline           (enforcement/baseline.py)
+                                   +-> Regression tests   (verify/regression.py)
                                            +-> Gate      (analyzers/gate.py) -> check / compile
+Exporter output -> Config verification (verify/config.py: syntax + intent)
+                -> Release (release/plan.py: plan / approve / deploy, release/audit.py)
 ```
 
-`analyzers/gate.py` takes the analyzer findings, validation warnings and the
-policy's `exceptions`, and labels each finding `violation`, `waived` or
-`warning` according to the `--fail-on` threshold. `compile` exports only when
-there are no violations. See [guardrails.md](guardrails.md).
+`enforcement/baseline.py` resolves an organisation baseline into the
+`Controls` for one environment and turns its forbidden patterns and required
+fields into findings. `analyzers/gate.py` combines analyzer and baseline
+findings, validation issues, regression-test results and the policy's
+`exceptions`, and labels each one `violation`, `waived` or `warning`.
+Exporters validate their own output (`Exporter.check_syntax`,
+`Exporter.native_checks`); `verify/config.py` adds a target-neutral comparison
+of the output with the IR. `release/` creates hash-identified plans, collects
+approvals, re-verifies before deploying and appends every step to a
+hash-chained audit log. See [guardrails.md](guardrails.md).
 
 The parser and validator are vendor-neutral. They understand only the Py2FW
 policy schema, object references, services and rule semantics.

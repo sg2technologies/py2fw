@@ -6,7 +6,9 @@ into vendor configurations — verifying intent before anything reaches a device
 
 ```bash
 py2fw validate   examples/basic.yaml
-py2fw check      examples/basic.yaml            # deployment gate (CI)
+py2fw check      examples/prod.yaml -b examples/baseline.yaml   # gate (CI)
+py2fw test       examples/prod.yaml -b examples/baseline.yaml   # regression flows
+py2fw verify     examples/prod.yaml -t paloalto # syntax + config-vs-intent
 py2fw analyze    examples/basic.yaml
 py2fw compliance examples/basic.yaml            # PCI DSS / NIST 800-53 / CIS
 py2fw simulate   examples/basic.yaml --src 10.10.1.10 --dst 10.10.2.10 --port 3306
@@ -17,13 +19,25 @@ py2fw targets
 py2fw graph      examples/basic.yaml --output policy.svg
 ```
 
+Review, approval and controlled deployment:
+
+```bash
+py2fw plan    examples/prod.yaml -t paloalto -b examples/baseline.yaml --author alice
+py2fw approve py2fw-plan.json --by bob
+py2fw approve py2fw-plan.json --by carol
+py2fw deploy  py2fw-plan.json --actor ci --to build/prod.cfg
+py2fw audit verify
+```
+
 `validate` and `analyze` report the **source line** of every issue.
 
-`check` and `compile` classify every finding as a **violation** or a **warning**.
-A violation is a finding at or above `--fail-on`, which defaults to `high`;
-`critical` findings, such as any-to-any, are always violations. `compile`
-refuses to emit a config while any violation remains. The only override is a
-reviewed, expiring entry under `exceptions:` in the policy. See
+A change only reaches production after it passes eight stages: parsing,
+schema validation, semantic security checks, enforcement of an organisation
+**baseline** with per-environment controls, config generation, config
+validation (syntax, comparison with the policy, regression flow tests),
+review and approval (diff, N approvers, no self-approval), and a
+re-verified deployment recorded in a hash-chained audit log. Every finding is
+a **violation** (blocks) or a **warning** (advisory). See
 [docs/guardrails.md](docs/guardrails.md).
 Hostnames in objects are passed through literally with a warning; run
 `compile --resolve-hosts` to resolve them once via DNS and pin the result in a
@@ -81,10 +95,12 @@ mypy py2fw
 
 - **Done:** validate, compile (9 targets, capability-aware), analyze, graph,
   `explain`, `simulate`, `diff`, `compliance` (PCI/NIST/CIS mapping),
-  `check` deployment gate with time-boxed exceptions,
+  `check` deployment gate with time-boxed exceptions, security baseline with
+  environment controls, regression flow tests, config syntax and intent
+  verification, `plan`/`approve`/`deploy` with a tamper-evident audit log,
   port-range-aware IR, YAML source-line provenance in findings, optional
   reproducible hostname resolution with a lockfile.
-- **Next:** GitOps action + PR comments, signed policy artifacts, egress/zone
+- **Next:** GitOps action + PR comments, egress/zone
   modeling to convert `review` compliance controls into `pass`/`fail`.
 
 ## Enterprise

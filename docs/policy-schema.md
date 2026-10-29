@@ -2,6 +2,7 @@
 
 ```yaml
 version: 1
+environment: prod      # optional; selects baseline controls
 objects:
   name:
     - 10.0.0.1
@@ -21,13 +22,22 @@ policies:
     service: [https]
     action: allow
     enabled: true
-    description: Optional audit note.
+    description: Business justification.
+    owner: team-name      # optional; a baseline can require it
+    ticket: CHG-123       # optional; a baseline can require it
 exceptions:            # optional; see guardrails.md
   - rule: rule_name
     finding: Open SSH
     reason: Why this risk is accepted.
     ticket: SEC-42
     expires: 2026-12-31
+tests:                 # optional security regression tests
+  - name: db-not-public
+    src: 203.0.113.10   # IP, object/group name, or '*'
+    dst: name
+    protocol: tcp       # tcp | udp | icmp
+    port: 3306
+    expect: deny        # allow | deny
 ```
 
 ## Fields
@@ -42,6 +52,8 @@ exceptions:            # optional; see guardrails.md
 - **Duplicate keys** anywhere in the file are rejected, with both line numbers.
 - **Exceptions** need `rule`, `finding`, a non-blank `reason` and an `expires`
   date. The rule must exist. `critical` findings cannot be waived.
+- **Tests** probe the first and last usable host of every address an
+  endpoint resolves to; a test passes only if every probed flow gets `expect`.
 
 ## Evaluation semantics
 

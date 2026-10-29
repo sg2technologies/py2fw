@@ -114,6 +114,8 @@ class PolicyIR:
     description: str
     line: int | None = None
     location: str = ""
+    owner: str = ""
+    ticket: str = ""
 
 
 @dataclass(frozen=True, slots=True)

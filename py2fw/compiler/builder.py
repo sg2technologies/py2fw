@@ -86,6 +86,8 @@ def build_ir(
             description=rule.description,
             line=source.line(f"policies[{index}]"),
             location=f"policies[{index}]",
+            owner=rule.owner,
+            ticket=rule.ticket,
         )
         for index, rule in enumerate(document.policies)
     )

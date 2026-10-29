@@ -127,8 +127,8 @@ def test_high_finding_is_violation_low_is_warning() -> None:
 
 def test_fail_on_threshold_changes_classification() -> None:
     doc = {**OPEN_SSH, "policies": [{**OPEN_SSH["policies"][0], "description": ""}]}
-    assert _verdicts(_gate(**doc), "Missing rule description") == [WARNING]
-    assert _verdicts(_gate("low", **doc), "Missing rule description") == [VIOLATION]
+    assert _verdicts(_gate(**doc), "Missing business justification") == [WARNING]
+    assert _verdicts(_gate("low", **doc), "Missing business justification") == [VIOLATION]
     assert _gate("critical", **doc).passed
 
 

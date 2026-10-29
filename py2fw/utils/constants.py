@@ -10,6 +10,8 @@ HIGH_RISK_PORTS: dict[int, str] = {
     445: "Open SMB",
     3389: "Open RDP",
     5900: "Open VNC",
+    5985: "Open WinRM",
+    5986: "Open WinRM",
 }
 
 # A public prefix at or below this length is treated as an over-broad source.

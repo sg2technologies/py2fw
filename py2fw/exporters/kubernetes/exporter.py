@@ -3,6 +3,7 @@ from __future__ import annotations
 import yaml
 
 from py2fw.compiler.ir import FirewallIR, PortRange, ServiceIR
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import Capabilities, address_values, service_values
 from py2fw.plugins.base import Exporter
 
@@ -12,7 +13,19 @@ _PROTOCOL = {"tcp": "TCP", "udp": "UDP"}
 class KubernetesNetworkPolicyExporter(Exporter):
     name = "kubernetes"
     description = "Kubernetes NetworkPolicy manifest"
-    capabilities = Capabilities(allow_only=True)
+    capabilities = Capabilities(allow_only=True, scopes_destination=False)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        data, problems = _syntax.yaml_document(
+            rendered, {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy"}
+        )
+        if problems or not isinstance(data, dict):
+            return problems
+        for index, entry in enumerate(data.get("spec", {}).get("ingress") or []):
+            for port in entry.get("ports", []):
+                if port.get("protocol") not in ("TCP", "UDP", "SCTP"):
+                    problems.append(f"ingress[{index}]: invalid protocol {port.get('protocol')}")
+        return problems
 
     def export(self, ir: FirewallIR) -> str:
         ingress: list[dict[str, object]] = []

@@ -19,23 +19,35 @@ from py2fw.analyzers.compliance import (
     framework_title,
 )
 from py2fw.analyzers.engine import analyze_ir
-from py2fw.analyzers.gate import (
-    DEFAULT_FAIL_ON,
-    SEVERITY_RANK,
-    VIOLATION,
-    WAIVED,
-    WARNING,
-    GateReport,
+from py2fw.analyzers.gate import SEVERITY_RANK, VIOLATION, WAIVED, WARNING, GateReport
+from py2fw.cli._pipeline import (
+    CompileError,
+    PolicyCheck,
+    RenderedConfig,
+    check_path,
+    compile_path,
+    render_config,
+    validate_path,
 )
-from py2fw.cli._pipeline import CompileError, check_path, compile_path, validate_path
 from py2fw.compiler.ir import FirewallIR
 from py2fw.compiler.validator import ValidationResult
+from py2fw.enforcement.baseline import BaselineError
 from py2fw.engine.diff import RuleSignature, diff_policies
 from py2fw.engine.evaluate import Flow, evaluate
-from py2fw.exporters._helpers import describe_lossiness
 from py2fw.parser.schema import PolicyDocument
 from py2fw.parser.yaml_parser import ParseError
 from py2fw.plugins.registry import load_builtin_exporters
+from py2fw.release import audit as audit_log
+from py2fw.release.plan import (
+    DEFAULT_STATE_DIR,
+    ReleaseError,
+    StatePaths,
+    approve_plan,
+    create_plan,
+    deploy_plan,
+    load_plan,
+    save_plan,
+)
 from py2fw.reports.html import render_html
 from py2fw.reports.json import render_json
 from py2fw.reports.markdown import render_markdown
@@ -52,11 +64,33 @@ def _emit(text: str) -> None:
 
 PolicyArg = Annotated[Path, typer.Argument(exists=True, dir_okay=False)]
 FailOnOpt = Annotated[
-    str,
+    str | None,
     typer.Option(
         "--fail-on",
-        help=f"Lowest severity that blocks: {', '.join(SEVERITY_RANK)}",
+        help=f"Lowest severity that blocks ({', '.join(SEVERITY_RANK)}); default from the "
+        "baseline, else high. With a baseline it can only tighten the gate.",
     ),
+]
+BaselineOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--baseline",
+        "-b",
+        dir_okay=False,
+        help="Organisation baseline YAML (default: $PY2FW_BASELINE).",
+    ),
+]
+EnvOpt = Annotated[
+    str | None,
+    typer.Option("--env", "-e", help="Environment (default: the policy's 'environment:')."),
+]
+StateOpt = Annotated[
+    Path,
+    typer.Option("--state-dir", help="Where deployed snapshots and the audit log live."),
+]
+NativeOpt = Annotated[
+    bool,
+    typer.Option("--native-syntax", help="Also validate with the vendor CLI (e.g. nft -c)."),
 ]
 
 
@@ -64,8 +98,8 @@ FailOnOpt = Annotated[
 def _handled() -> Iterator[None]:
     try:
         yield
-    except (ParseError, CompileError) as exc:
-        err_console.print(f"[red]{exc}[/red]")
+    except (ParseError, CompileError, BaselineError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=2) from exc
 
 
@@ -99,14 +133,25 @@ def validate_command(policy: PolicyArg) -> None:
 
 
 def _check(
-    policy: Path, fail_on: str, *, resolve_hosts: bool = False, refresh_hosts: bool = False
-) -> tuple[FirewallIR, GateReport]:
-    if fail_on not in SEVERITY_RANK:
+    policy: Path,
+    fail_on: str | None,
+    baseline: Path | None = None,
+    environment: str | None = None,
+    *,
+    resolve_hosts: bool = False,
+    refresh_hosts: bool = False,
+) -> PolicyCheck:
+    if fail_on is not None and fail_on not in SEVERITY_RANK:
         err_console.print(f"[red]unknown severity: {fail_on}[/red]")
         raise typer.Exit(code=2)
     with _handled():
         return check_path(
-            policy, fail_on=fail_on, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
+            policy,
+            fail_on=fail_on,
+            baseline=baseline,
+            environment=environment,
+            resolve_hosts=resolve_hosts,
+            refresh_hosts=refresh_hosts,
         )
 
 
@@ -129,20 +174,27 @@ def _print_gate(policy: Path, gate: GateReport, out: Console) -> None:
     counts = ", ".join(
         f"{len(gate.by_verdict(verdict))} {verdict}" for verdict in (VIOLATION, WAIVED, WARNING)
     )
+    passed_tests = sum(result.passed for result in gate.tests)
+    tests = f", {passed_tests}/{len(gate.tests)} tests passed" if gate.tests else ""
+    env = f"env: {gate.environment}, " if gate.environment else ""
     status = "[green]PASS[/green]" if gate.passed else "[red]FAIL[/red]"
-    out.print(f"{status} {policy.name}: {counts} (fail-on: {gate.fail_on})")
+    out.print(
+        f"{status} {policy.name}: {counts}{tests} ({env}fail-on: {gate.fail_on})", soft_wrap=True
+    )
 
 
 def _gate_json(policy: Path, gate: GateReport) -> str:
     return json.dumps(
         {
             "policy": str(policy),
+            "environment": gate.environment,
             "passed": gate.passed,
             "fail_on": gate.fail_on,
             "items": [
                 {"verdict": item.verdict, "note": item.note, **asdict(item.finding)}
                 for item in gate.items
             ],
+            "tests": [asdict(result) for result in gate.tests],
         },
         indent=2,
     )
@@ -151,14 +203,16 @@ def _gate_json(policy: Path, gate: GateReport) -> str:
 @app.command("check")
 def check_command(
     policies: Annotated[list[Path], typer.Argument(exists=True, dir_okay=False)],
-    fail_on: FailOnOpt = DEFAULT_FAIL_ON,
+    fail_on: FailOnOpt = None,
+    baseline: BaselineOpt = None,
+    env: EnvOpt = None,
     output_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Deployment gate: exit 1 if any policy has a blocking violation (for CI / pre-merge)."""
 
     failed = False
     for policy in policies:
-        _, gate = _check(policy, fail_on)
+        gate = _check(policy, fail_on, baseline, env).gate
         failed = failed or not gate.passed
         if output_json:
             _emit(_gate_json(policy, gate))
@@ -166,6 +220,57 @@ def check_command(
             _print_gate(policy, gate, console)
     if failed:
         raise typer.Exit(code=1)
+
+
+@app.command("test")
+def test_command(
+    policy: PolicyArg,
+    baseline: BaselineOpt = None,
+    env: EnvOpt = None,
+) -> None:
+    """Run the policy's and the baseline's security regression tests."""
+
+    results = _check(policy, None, baseline, env).gate.tests
+    if not results:
+        console.print("No regression tests defined.")
+        return
+    for result in results:
+        mark = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
+        console.print(f"{mark} {escape(result.name)} ({result.origin}): {escape(result.detail)}")
+    failed = [result for result in results if not result.passed]
+    console.print(f"{len(results) - len(failed)}/{len(results)} passed")
+    if failed:
+        raise typer.Exit(code=1)
+
+
+def _render(ir: FirewallIR, target: str, native: bool) -> RenderedConfig:
+    try:
+        return render_config(ir, target, native_syntax=native)
+    except KeyError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+
+def _print_checks(rendered: RenderedConfig, out: Console) -> None:
+    for check in rendered.checks:
+        mark = "[green]PASS[/green]" if check.passed else "[red]FAIL[/red]"
+        out.print(f"{mark} {check.kind}: {escape(check.detail)}", soft_wrap=True)
+
+
+@app.command("verify")
+def verify_command(
+    policy: PolicyArg,
+    target: Annotated[str, typer.Option("--target", "-t")],
+    native_syntax: NativeOpt = False,
+) -> None:
+    """Validate the generated configuration: syntax and comparison with the policy."""
+
+    rendered = _render(_compile(policy), target, native_syntax)
+    _print_checks(rendered, console)
+    for warning in rendered.lossy:
+        console.print(f"[yellow]LOSSY[/yellow] {escape(warning)}")
+    if not rendered.verified:
+        raise typer.Exit(code=5)
 
 
 @app.command("compile")
@@ -176,41 +281,213 @@ def compile_command(
     allow_lossy: Annotated[bool, typer.Option("--allow-lossy")] = False,
     resolve_hosts: Annotated[bool, typer.Option("--resolve-hosts")] = False,
     refresh_hosts: Annotated[bool, typer.Option("--refresh-hosts")] = False,
-    fail_on: FailOnOpt = DEFAULT_FAIL_ON,
+    fail_on: FailOnOpt = None,
+    baseline: BaselineOpt = None,
+    env: EnvOpt = None,
+    native_syntax: NativeOpt = False,
 ) -> None:
-    ir, gate = _check(
-        policy, fail_on, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
+    if target not in load_builtin_exporters().names():
+        err_console.print(f"[red]unknown target: {target}[/red]")
+        raise typer.Exit(code=2)
+    check = _check(
+        policy, fail_on, baseline, env, resolve_hosts=resolve_hosts, refresh_hosts=refresh_hosts
     )
-    if not gate.passed:
-        _print_gate(policy, gate, err_console)
+    if not check.gate.passed:
+        _print_gate(policy, check.gate, err_console)
         err_console.print(
             "[red]refusing to emit a policy with blocking violations; fix the rules or add "
             "a time-boxed entry under 'exceptions:'[/red]"
         )
         raise typer.Exit(code=4)
-    registry = load_builtin_exporters()
-    try:
-        exporter = registry.create(target)
-    except KeyError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=2) from exc
+    if not check.controls.target_allowed(target):
+        allowed = ", ".join(check.controls.allowed_targets)
+        err_console.print(
+            f"[red]target {target} is not approved for {check.controls.environment}; "
+            f"allowed: {allowed}[/red]"
+        )
+        raise typer.Exit(code=4)
 
-    warnings = describe_lossiness(ir, exporter.capabilities)
-    for warning in warnings:
-        err_console.print(f"[yellow]LOSSY[/yellow] {warning}")
-    if warnings and not allow_lossy:
+    rendered = _render(check.ir, target, native_syntax)
+    for warning in rendered.lossy:
+        err_console.print(f"[yellow]LOSSY[/yellow] {escape(warning)}")
+    if rendered.lossy and not allow_lossy:
         err_console.print(
             "[red]refusing to emit a policy that loses semantics; "
             "pass --allow-lossy to override[/red]"
         )
         raise typer.Exit(code=3)
+    if not rendered.verified:
+        _print_checks(rendered, err_console)
+        err_console.print("[red]generated configuration failed verification[/red]")
+        raise typer.Exit(code=5)
 
-    rendered = exporter.export(ir)
     if output:
-        output.write_text(rendered, encoding="utf-8")
+        output.write_text(rendered.text, encoding="utf-8")
         console.print(f"[green]Wrote {output}[/green]")
     else:
-        _emit(rendered)
+        _emit(rendered.text)
+
+
+def _print_release_error(exc: ReleaseError) -> None:
+    err_console.print(f"[red]{escape(str(exc))}[/red]")
+    for reason in exc.reasons:
+        err_console.print(f"  - {escape(reason)}", soft_wrap=True)
+
+
+@app.command("plan")
+def plan_command(
+    policy: PolicyArg,
+    target: Annotated[str, typer.Option("--target", "-t")],
+    author: Annotated[str, typer.Option("--author", help="Who is proposing this change.")],
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("py2fw-plan.json"),
+    fail_on: FailOnOpt = None,
+    baseline: BaselineOpt = None,
+    env: EnvOpt = None,
+    allow_lossy: Annotated[bool, typer.Option("--allow-lossy")] = False,
+    native_syntax: NativeOpt = False,
+    state_dir: StateOpt = DEFAULT_STATE_DIR,
+) -> None:
+    """Gate, verify and diff a change for review; writes a plan file to approve and deploy."""
+
+    with _handled():
+        try:
+            plan = create_plan(
+                policy,
+                target,
+                author=author,
+                baseline=baseline,
+                environment=env,
+                fail_on=fail_on,
+                allow_lossy=allow_lossy,
+                native_syntax=native_syntax,
+                state=StatePaths(state_dir),
+            )
+        except ReleaseError as exc:
+            _print_release_error(exc)
+            raise typer.Exit(code=2) from exc
+    save_plan(plan, output)
+    content = plan["content"]
+    console.print(f"[bold]Plan {plan['plan_id'][:12]}[/bold] {content['target']} "
+                  f"({content['environment'] or 'no environment'}) by {content['author']}")
+    console.print("\n[bold]Policy changes[/bold]")
+    for line in content["policy_changes"]:
+        console.print(f"  {escape(line)}")
+    console.print("\n[bold]Configuration diff[/bold]")
+    _emit(content["config_diff"] or "  (no change from deployed configuration)")
+    gate = content["gate"]
+    console.print(
+        f"\nGate: {'PASS' if gate['passed'] else 'FAIL'} - {len(gate['violations'])} violation, "
+        f"{len(gate['waived'])} waived, {gate['warnings']} warning"
+    )
+    for check in content["verification"]:
+        console.print(f"Verify {check['kind']}: {'PASS' if check['passed'] else 'FAIL'}")
+    console.print(f"Approvals required: {content['required_approvals']}")
+    console.print(f"[green]Wrote {output}[/green]")
+    if not content["deployable"]:
+        console.print("[red]Plan is not deployable:[/red]")
+        for reason in content["blockers"]:
+            console.print(f"  - {escape(reason)}", soft_wrap=True)
+        raise typer.Exit(code=1)
+
+
+@app.command("approve")
+def approve_command(
+    plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    by: Annotated[str, typer.Option("--by", help="Approver identity (not the plan author).")],
+    comment: Annotated[str, typer.Option("--comment", "-m")] = "",
+    state_dir: StateOpt = DEFAULT_STATE_DIR,
+) -> None:
+    """Record an approval on a plan file."""
+
+    try:
+        plan = approve_plan(load_plan(plan_file), by, comment=comment, state=StatePaths(state_dir))
+    except ReleaseError as exc:
+        _print_release_error(exc)
+        raise typer.Exit(code=6) from exc
+    save_plan(plan, plan_file)
+    count = len(plan["approvals"])
+    required = plan["content"]["required_approvals"]
+    console.print(f"[green]Approved by {escape(by)}[/green] ({count}/{required} approvals)")
+
+
+@app.command("deploy")
+def deploy_command(
+    plan_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    actor: Annotated[str, typer.Option("--actor", help="Who (or which pipeline) deploys.")],
+    to: Annotated[
+        Path | None, typer.Option("--to", dir_okay=False, help="Write the config here.")
+    ] = None,
+    run: Annotated[
+        str | None,
+        typer.Option("--run", help="Command to apply it; {config} is replaced by its path."),
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    state_dir: StateOpt = DEFAULT_STATE_DIR,
+) -> None:
+    """Re-verify an approved plan and deploy it, recording the result in the audit log."""
+
+    with _handled():
+        try:
+            result = deploy_plan(
+                load_plan(plan_file),
+                actor=actor,
+                destination=to,
+                command=run,
+                dry_run=dry_run,
+                state=StatePaths(state_dir),
+            )
+        except ReleaseError as exc:
+            _print_release_error(exc)
+            raise typer.Exit(code=6) from exc
+    approvers = ", ".join(result.approvers) or "none required"
+    if result.dry_run:
+        console.print(f"[green]Plan {result.plan_id[:12]} is deployable[/green] "
+                      f"(approved by: {approvers})")
+        return
+    if result.command_output:
+        _emit(result.command_output)
+    where = f" to {result.destination}" if result.destination else ""
+    console.print(
+        f"[green]Deployed {result.plan_id[:12]}{where}[/green] (approved by: {approvers})"
+    )
+
+
+audit_app = typer.Typer(help="Inspect and verify the deployment audit log.")
+app.add_typer(audit_app, name="audit")
+
+
+@audit_app.command("verify")
+def audit_verify_command(state_dir: StateOpt = DEFAULT_STATE_DIR) -> None:
+    """Check the audit log's hash chain for tampering."""
+
+    result = audit_log.verify_log(StatePaths(state_dir).audit_log)
+    for problem in result.problems:
+        console.print(f"[red]{escape(problem)}[/red]")
+    if not result.ok:
+        raise typer.Exit(code=1)
+    console.print(f"[green]Audit log intact[/green] ({result.entries} entries)")
+
+
+@audit_app.command("show")
+def audit_show_command(
+    state_dir: StateOpt = DEFAULT_STATE_DIR,
+    output_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """List audit log entries."""
+
+    entries = audit_log.read_log(StatePaths(state_dir).audit_log)
+    if output_json:
+        _emit(json.dumps(entries, indent=2))
+        return
+    for entry in entries:
+        target = f"{entry.get('environment') or '-'}/{entry.get('target', '-')}"
+        plan = str(entry.get("plan_id", ""))[:12]
+        console.print(
+            f"{entry['seq']:>4} {entry['at']} {entry['event']:<15} {target:<22} "
+            f"{plan} {escape(str(entry['actor']))}",
+            highlight=False,
+            soft_wrap=True,
+        )
 
 
 @app.command("analyze")

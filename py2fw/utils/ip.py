@@ -20,6 +20,18 @@ def is_valid_ip_or_cidr(value: str) -> bool:
         return False
 
 
+def has_host_bits(value: str) -> bool:
+    """True for a CIDR such as ``10.0.0.5/24`` whose address is not the network address."""
+
+    if "/" not in value or is_any(value):
+        return False
+    try:
+        ipaddress.ip_network(value)
+    except ValueError:
+        return is_valid_ip_or_cidr(value)
+    return False
+
+
 def is_ipv6(value: str) -> bool:
     try:
         return ipaddress.ip_network(value, strict=False).version == 6

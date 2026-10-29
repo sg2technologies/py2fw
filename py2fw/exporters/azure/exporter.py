@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from py2fw.compiler.ir import FirewallIR, PortRange, ServiceIR
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import Capabilities, address_values, service_values
 from py2fw.plugins.base import Exporter
 
@@ -13,6 +14,19 @@ class AzureNsgExporter(Exporter):
     name = "azure-nsg"
     description = "Azure Network Security Group rules"
     capabilities = Capabilities(supports_reject=False)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        data, problems = _syntax.json_document(rendered, ["securityRules"])
+        if problems or not isinstance(data, dict):
+            return problems
+        rules = data["securityRules"]
+        priorities = [rule.get("properties", {}).get("priority") for rule in rules]
+        for name, priority in zip((r.get("name") for r in rules), priorities, strict=True):
+            if not isinstance(priority, int) or not 100 <= priority <= 4096:
+                problems.append(f"{name}: priority must be an integer in 100-4096")
+        problems += _syntax.unique(priorities, "priority")
+        problems += _syntax.unique((r.get("name") for r in rules), "rule name")
+        return problems
 
     def export(self, ir: FirewallIR) -> str:
         rules: list[dict[str, object]] = []

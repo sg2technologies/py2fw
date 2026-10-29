@@ -1,0 +1,47 @@
+# Organisation security baseline - owned by the security team, not policy authors.
+# Use with:  py2fw check <policy> --baseline examples/baseline.yaml --env prod
+version: 1
+
+defaults:
+  fail_on: high
+  allow_exceptions: true
+  max_exception_days: 180
+  forbidden:
+    - name: no-admin-from-internet
+      source: broad
+      ports: [22, 23, 3389, 5900, 5985, 5986]
+      severity: critical
+      description: Administrative protocols must never be reachable from untrusted networks.
+    - name: no-unrestricted-destination
+      source: broad
+      destination: any
+      severity: critical
+      description: Untrusted sources must target specific destinations.
+  tests:
+    - name: internet-cannot-ssh-anywhere
+      src: 203.0.113.10
+      dst: "*"
+      port: 22
+      expect: deny
+    - name: internet-cannot-rdp-anywhere
+      src: 203.0.113.10
+      dst: "*"
+      port: 3389
+      expect: deny
+
+environments:
+  dev:
+    fail_on: critical
+  staging:
+    required_approvals: 1
+  prod:
+    fail_on: medium
+    require_fields: [description, owner, ticket]
+    max_exception_days: 30
+    required_approvals: 2
+    allowed_targets: [paloalto, fortigate, aws-sg, azure-nsg]
+    forbidden:
+      - name: no-cleartext-in-prod
+        ports: [21, 23, 69, 80, 161]
+        severity: high
+        description: Cleartext protocols are not permitted in production.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from py2fw.compiler.ir import FirewallIR, ServiceIR
+from py2fw.exporters import _syntax
 from py2fw.exporters._helpers import (
     Capabilities,
     address_values,
@@ -17,6 +18,25 @@ class NftablesExporter(Exporter):
     name = "nftables"
     description = "Linux nftables ruleset"
     capabilities = Capabilities(supports_reject=True)
+
+    def check_syntax(self, rendered: str) -> list[str]:
+        opens = rendered.count("{")
+        closes = rendered.count("}")
+        problems = [] if opens == closes else [f"unbalanced braces ({opens} open, {closes} close)"]
+        return problems + _syntax.line_grammar(
+            rendered,
+            [
+                r"table inet \w+ \{",
+                r"\s+chain \w+ \{",
+                r"\s+type filter hook \w+ priority -?\d+; policy (accept|drop);",
+                r"\s+#.*",
+                r"\s+.*counter (accept|drop|reject) comment \"[^\"]*\"",
+                r"\s*\}",
+            ],
+        )
+
+    def native_checks(self, rendered: str) -> list[tuple[tuple[str, ...], str]]:
+        return [(("nft", "-c", "-f", "-"), rendered)]
 
     def export(self, ir: FirewallIR) -> str:
         lines = [

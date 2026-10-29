@@ -12,4 +12,6 @@ dist/
 .venv/
 venv/
 policy.svg
+.py2fw/
+py2fw-plan.json
 *.gv

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 
 from py2fw.parser.schema import PolicyDocument
 from py2fw.parser.source_map import SourceMap
 from py2fw.utils.constants import VALID_ACTIONS, VALID_PROTOCOLS
-from py2fw.utils.ip import is_hostname, is_valid_endpoint
+from py2fw.utils.ip import has_host_bits, is_hostname, is_valid_endpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,16 @@ def _validate_port(
             result.add("error", f"port out of range: {port}", f"services.{name}.port")
 
 
+def is_flow_endpoint(value: str, document: PolicyDocument) -> bool:
+    if value == "*" or value in document.objects or value in document.groups:
+        return True
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
 def validate_document(
     document: PolicyDocument, source: SourceMap | None = None
 ) -> ValidationResult:
@@ -79,6 +90,10 @@ def validate_document(
             seen_values.add(value)
             if not is_valid_endpoint(value):
                 result.add("error", f"invalid IP, CIDR, or hostname: {value}", loc)
+            elif has_host_bits(value):
+                result.add(
+                    "warning", f"CIDR {value} has host bits set; it is treated as its network", loc
+                )
             elif is_hostname(value):
                 result.add(
                     "warning",
@@ -134,5 +149,17 @@ def validate_document(
         if key in waived:
             result.add("warning", "duplicate exception", location)
         waived.add(key)
+
+    for index, test in enumerate(document.tests):
+        for side in ("src", "dst"):
+            value = getattr(test, side)
+            if not is_flow_endpoint(value, document):
+                result.add(
+                    "error",
+                    f"test endpoint must be an IP, object/group name or '*': {value}",
+                    f"tests[{index}].{side}",
+                )
+        if test.protocol in ("tcp", "udp") and test.port is None:
+            result.add("error", f"{test.protocol} tests require a port", f"tests[{index}]")
 
     return result
