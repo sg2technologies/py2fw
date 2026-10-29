@@ -125,4 +125,14 @@ def validate_document(
             if service_ref not in document.services and service_ref != "any":
                 result.add("error", f"unknown service reference: {service_ref}", location)
 
+    waived: set[tuple[str, str]] = set()
+    for index, exception in enumerate(document.exceptions):
+        location = f"exceptions[{index}]"
+        if exception.rule not in rule_names:
+            result.add("error", f"exception references unknown rule: {exception.rule}", location)
+        key = (exception.rule, exception.finding)
+        if key in waived:
+            result.add("warning", "duplicate exception", location)
+        waived.add(key)
+
     return result

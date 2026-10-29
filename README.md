@@ -6,6 +6,7 @@ into vendor configurations — verifying intent before anything reaches a device
 
 ```bash
 py2fw validate   examples/basic.yaml
+py2fw check      examples/basic.yaml            # deployment gate (CI)
 py2fw analyze    examples/basic.yaml
 py2fw compliance examples/basic.yaml            # PCI DSS / NIST 800-53 / CIS
 py2fw simulate   examples/basic.yaml --src 10.10.1.10 --dst 10.10.2.10 --port 3306
@@ -17,6 +18,13 @@ py2fw graph      examples/basic.yaml --output policy.svg
 ```
 
 `validate` and `analyze` report the **source line** of every issue.
+
+`check` and `compile` classify every finding as a **violation** or a **warning**.
+A violation is a finding at or above `--fail-on`, which defaults to `high`;
+`critical` findings, such as any-to-any, are always violations. `compile`
+refuses to emit a config while any violation remains. The only override is a
+reviewed, expiring entry under `exceptions:` in the policy. See
+[docs/guardrails.md](docs/guardrails.md).
 Hostnames in objects are passed through literally with a warning; run
 `compile --resolve-hosts` to resolve them once via DNS and pin the result in a
 `<policy>.py2fw-lock.json` file for reproducible builds.
@@ -73,6 +81,7 @@ mypy py2fw
 
 - **Done:** validate, compile (9 targets, capability-aware), analyze, graph,
   `explain`, `simulate`, `diff`, `compliance` (PCI/NIST/CIS mapping),
+  `check` deployment gate with time-boxed exceptions,
   port-range-aware IR, YAML source-line provenance in findings, optional
   reproducible hostname resolution with a lockfile.
 - **Next:** GitOps action + PR comments, signed policy artifacts, egress/zone

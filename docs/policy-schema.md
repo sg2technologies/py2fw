@@ -22,6 +22,12 @@ policies:
     action: allow
     enabled: true
     description: Optional audit note.
+exceptions:            # optional; see guardrails.md
+  - rule: rule_name
+    finding: Open SSH
+    reason: Why this risk is accepted.
+    ticket: SEC-42
+    expires: 2026-12-31
 ```
 
 ## Fields
@@ -33,6 +39,9 @@ policies:
   ranges through the whole pipeline — they are never expanded into per-port rules.
 - `icmp` and `any` services must **not** carry a `port`.
 - `any` as an object value (or the aliases `0.0.0.0/0`, `::/0`) means "any address".
+- **Duplicate keys** anywhere in the file are rejected, with both line numbers.
+- **Exceptions** need `rule`, `finding`, a non-blank `reason` and an `expires`
+  date. The rule must exist. `critical` findings cannot be waived.
 
 ## Evaluation semantics
 

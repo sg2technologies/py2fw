@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from hashlib import sha256
 
-from py2fw.compiler.ir import AddressIR, FirewallIR, PolicyIR, PortSpec, ServiceIR
+from py2fw.compiler.ir import (
+    AddressIR,
+    ExceptionIR,
+    FirewallIR,
+    PolicyIR,
+    PortSpec,
+    ServiceIR,
+)
 from py2fw.compiler.resolver import resolve_rule_references
 from py2fw.parser.schema import PolicyDocument
 from py2fw.parser.source_map import SourceMap
@@ -83,6 +90,18 @@ def build_ir(
         for index, rule in enumerate(document.policies)
     )
     groups = {name: tuple(members) for name, members in document.groups.items()}
+    exceptions = tuple(
+        ExceptionIR(
+            rule=exception.rule,
+            finding=exception.finding,
+            reason=exception.reason,
+            expires=exception.expires,
+            ticket=exception.ticket,
+            line=source.line(f"exceptions[{index}]"),
+            location=f"exceptions[{index}]",
+        )
+        for index, exception in enumerate(document.exceptions)
+    )
     return FirewallIR(
         version=document.version,
         addresses=addresses,
@@ -90,4 +109,5 @@ def build_ir(
         policies=policies,
         groups=groups,
         source_map=source,
+        exceptions=exceptions,
     )

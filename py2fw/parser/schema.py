@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -53,6 +54,25 @@ class RuleModel(BaseModel):
         return normalized
 
 
+class ExceptionModel(BaseModel):
+    """A documented, time-boxed waiver for one analyzer finding on one rule."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rule: str
+    finding: str
+    reason: str = Field(min_length=1)
+    expires: date
+    ticket: str = ""
+
+    @field_validator("reason")
+    @classmethod
+    def reason_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("an exception must state a reason")
+        return value
+
+
 class PolicyDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -61,6 +81,7 @@ class PolicyDocument(BaseModel):
     groups: dict[str, list[str]] = Field(default_factory=dict)
     services: dict[str, ServiceModel] = Field(default_factory=dict)
     policies: list[RuleModel] = Field(default_factory=list)
+    exceptions: list[ExceptionModel] = Field(default_factory=list)
 
     @field_validator("objects", "groups", "services")
     @classmethod

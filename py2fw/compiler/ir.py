@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import date
 
 from py2fw.parser.source_map import SourceMap
 
@@ -116,6 +117,17 @@ class PolicyIR:
 
 
 @dataclass(frozen=True, slots=True)
+class ExceptionIR:
+    rule: str
+    finding: str
+    reason: str
+    expires: date
+    ticket: str = ""
+    line: int | None = None
+    location: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class FirewallIR:
     version: int
     addresses: dict[str, AddressIR]
@@ -123,3 +135,4 @@ class FirewallIR:
     policies: tuple[PolicyIR, ...]
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     source_map: SourceMap = field(default_factory=SourceMap)
+    exceptions: tuple[ExceptionIR, ...] = ()
